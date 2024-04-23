@@ -2,37 +2,47 @@ package graphql
 
 import (
 	"fmt"
-	"github.com/vinted/graphql-exporter/pkg/config"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/vinted/graphql-exporter/pkg/config"
 )
 
 func GraphqlQuery(query string) ([]byte, error) {
-	params := url.Values{}
-	params.Add("query", query)
-	u, err := url.ParseRequestURI(config.Config.GraphqlURL)
+	// Prepare the request body
+	params := url.Values{"query": {query}}
+	body := strings.NewReader(params.Encode())
+
+	// Prepare the request
+	req, err := http.NewRequest(http.MethodPost, config.Config.GraphqlURL, body)
 	if err != nil {
-		log.Printf("Error parsing URL: %s\n", err)
+		return nil, fmt.Errorf("error creating HTTP request: %s", err)
 	}
-	urlStr := u.String()
-	client := &http.Client{}
-	req, err := http.NewRequest(http.MethodPost, urlStr, strings.NewReader(params.Encode()))
-	if err != nil {
-		log.Printf("HTTP requrest error: %s\n", err)
-	}
+
+	// Add headers
 	req.Header.Add("Authorization", config.Config.GraphqlAPIToken)
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	r, err := client.Do(req)
-	if r.StatusCode != 200 {
-		return nil, fmt.Errorf(r.Status)
-	}
-	defer r.Body.Close()
-	body, err := ioutil.ReadAll(r.Body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// Send the request
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error sending HTTP request: %s", err)
 	}
-	return body, nil
+	defer resp.Body.Close()
+
+	// Check response status code
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
+	}
+
+	// Read and return response body
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %s", err)
+	}
+
+	return bodyBytes, nil
 }
