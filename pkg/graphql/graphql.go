@@ -1,48 +1,65 @@
 package graphql
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/vinted/graphql-exporter/pkg/config"
 )
 
 func GraphqlQuery(query string) ([]byte, error) {
-	// Prepare the request body
-	params := url.Values{"query": {query}}
-	body := strings.NewReader(params.Encode())
-
-	// Prepare the request
-	req, err := http.NewRequest(http.MethodPost, config.Config.GraphqlURL, body)
+	// Prepare the request payload
+	payload := map[string]string{"query": query}
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("error creating HTTP request: %s", err)
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	// Add headers
-	req.Header.Add("Authorization", config.Config.GraphqlAPIToken)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// Parse the GraphQL URL
+	u, err := url.ParseRequestURI(config.Config.GraphqlURL)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing URL: %w", err)
+	}
 
-	// Send the request
+	// Create the HTTP client
 	client := &http.Client{}
+
+	// Create the HTTP request
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request error: %w", err)
+	}
+
+	// Set headers
+	req.Header.Add("Authorization", config.Config.GraphqlAPIToken)
+	req.Header.Add("Content-Type", "application/json")
+
+	// Execute the request
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error sending HTTP request: %s", err)
+		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check response status code
+	// Check the response status code
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status: %s", resp.Status)
+		// Read the response body to get more details about the error
+		errorBody, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", err)
+		}
+		return nil, fmt.Errorf("unexpected status code: %d, error message: %s", resp.StatusCode, string(errorBody))
 	}
 
-	// Read and return response body
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	// Read the response body
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %s", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	return bodyBytes, nil
+	return body, nil
 }
