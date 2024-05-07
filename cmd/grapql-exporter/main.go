@@ -120,6 +120,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	queryData, err := ioutil.ReadFile(queryPath)
 	if err != nil {
+		fmt.Println("Failed to read query file:", err)
 		http.Error(w, "Failed to read query file", http.StatusInternalServerError)
 		return
 	}
@@ -127,6 +128,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 	//authToken := r.Header.Get("Authorization")
 	result, err := executeGraphQLQuery(string(queryData), EXPORTER_GRAPHQL_AUTH)
 	if err != nil {
+		fmt.Println("Failed to execute GraphQL query:", err)
 		http.Error(w, "Failed to execute GraphQL query", http.StatusInternalServerError)
 		return
 	}
