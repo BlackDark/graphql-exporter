@@ -1,40 +1,16 @@
 {
-  "GraphqlURL": "http://localhost:8090/graphql/",
-  "GraphqlAPIToken": "Token SECRET",
-  "CacheExpire": 0,
-  "queries":[
-    {
-      "query": "query {device_list {name serial custom_fields}}",
-      "metrics": [
-        {
-          "description": "Deprecation date",
-          "placeholder": "device_list",
-          "labels": [
-            "name",
-            "custom_fields,order_contract_id",
-            "serial"
-          ],
-          "value": "custom_fields,depreciation_date"
-        },
-        {
-          "description": "Device price",
-          "placeholder": "device_list",
-          "labels": [
-            "name",
-            "custom_fields,order_contract_id"
-          ],
-          "value": "custom_fields,price"
-        },
-        {
-          "description": "Device memory total",
-          "placeholder": "device_list",
-          "labels": [
-            "name",
-            "custom_fields,order_contract_id"
-          ],
-          "value": "custom_fields,memory_total"
-        }
-      ]
+  "queryPaths": {
+    "path1": {
+      "url": "http://localhost:8090/graphql/",
+      "authKey": "Authorization",
+      "authValue": "Token SECRET",
+      "cacheMinutes": 2
+    },
+    "hasura": {
+      "url": "http://localhost:8090/graphql/",
+      "authKey": "Authorization",
+      "authValue": "Token SECRET",
+      "cacheMinutes": 2
     }
-  ]
+  }
 }

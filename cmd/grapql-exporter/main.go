@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,18 +26,20 @@ const (
 )
 
 var (
-	EXPORTER_LISTEN_ADDR   = getenv("EXPORTER_LISTEN_ADDR", "127.0.0.1:9199")
-	EXPORTER_TLS_CERT_FILE = getenv("EXPORTER_TLS_CERT_FILE", "")
-	EXPORTER_TLS_KEY_FILE  = getenv("EXPORTER_TLS_KEY_FILE", "")
-	EXPORTER_GRAPHQL_URL   = getenv("EXPORTER_GRAPHQL_URL", "")
-	EXPORTER_GRAPHQL_AUTH  = getenv("EXPORTER_GRAPHQL_AUTH", "")
-	EXPORTER_CACHE_MINUTES = getenvInt("EXPORTER_CACHE_MINUTES", 60)
+	EXPORTER_LISTEN_ADDR         = getenv("EXPORTER_LISTEN_ADDR", "0.0.0.0:9199")
+	EXPORTER_TLS_CERT_FILE       = getenv("EXPORTER_TLS_CERT_FILE", "")
+	EXPORTER_TLS_KEY_FILE        = getenv("EXPORTER_TLS_KEY_FILE", "")
+	EXPORTER_GRAPHQL_CONFIG_PATH = getenv("EXPORTER_GRAPHQL_CONFIG_PATH", "/config.json")
+	EXPORTER_GRAPHQL_URL         = getenv("EXPORTER_GRAPHQL_URL", "")
+	EXPORTER_GRAPHQL_AUTH        = getenv("EXPORTER_GRAPHQL_AUTH", "")
+	EXPORTER_CACHE_MINUTES       = getenvInt("EXPORTER_CACHE_MINUTES", 60)
 )
 
 var (
 	client          = &http.Client{Timeout: 20 * time.Second}
 	cacheExpiration = parseDuration(fmt.Sprintf("%dm", EXPORTER_CACHE_MINUTES))
 	cacheMutex      sync.RWMutex
+	config          QueryPaths
 )
 
 var ErrEnvVarEmpty = errors.New("getenv: environment variable empty")
@@ -78,6 +81,35 @@ func getenvInt(key string, fallback int) int {
 	return v
 }
 
+type QueryPath struct {
+	URL          string `json:"url"`
+	AuthKey      string `json:"authKey"`
+	AuthValue    string `json:"authValue"`
+	CacheMinutes int    `json:"cacheMinutes"`
+}
+
+//type QueryPaths map[string]QueryPath
+
+type QueryPaths struct {
+	QueryPaths map[string]QueryPath `json:"queryPaths"`
+}
+
+func loadConfig() error {
+	file, err := os.ReadFile(EXPORTER_GRAPHQL_CONFIG_PATH)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return err
+	}
+
+	err = json.Unmarshal(file, &config)
+	if err != nil {
+		fmt.Println("Error decoding JSON:", err)
+		return err
+	}
+
+	return nil
+}
+
 func main() {
 	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
 		err := os.Mkdir(cacheDir, os.ModePerm)
@@ -87,6 +119,20 @@ func main() {
 			os.Exit(1)
 		}
 	}
+
+	err := loadConfig()
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Loaded %d configurations.", len(config.QueryPaths))
+	var keys []string
+	for k := range config.QueryPaths {
+		keys = append(keys, k)
+	}
+	fmt.Println("Map keys:", keys) // Output: [apple banana cherry]
 
 	http.HandleFunc("/queries/", handleQuery)
 
@@ -108,9 +154,26 @@ func main() {
 }
 
 func handleQuery(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(r.URL.Path, "/")
+
+	if len(parts) != 4 {
+		fmt.Println("Not enough parts provided:", parts)
+		http.Error(w, "Failed to read query file", http.StatusInternalServerError)
+		return
+	}
+
+	configPath := parts[2]
+
+	fmt.Println(config)
+	val, ok := config.QueryPaths[configPath]
+	if !ok {
+		http.Error(w, fmt.Sprintf("Config not provided for GraphQL client: %s", configPath), http.StatusInternalServerError)
+		return
+	}
+
 	queryName := filepath.Base(r.URL.Path)
-	queryPath := filepath.Join(queriesDir, queryName+".gql")
-	cachePath := filepath.Join(cacheDir, queryName+cacheExtension)
+	queryPath := filepath.Join(queriesDir, configPath, queryName+".gql")
+	cachePath := filepath.Join(cacheDir, configPath, queryName+cacheExtension)
 
 	cachedData, err := readCachedData(cachePath)
 	if err == nil && !isCacheExpired(cachePath) {
@@ -126,7 +189,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//authToken := r.Header.Get("Authorization")
-	result, err := executeGraphQLQuery(string(queryData), EXPORTER_GRAPHQL_AUTH)
+	result, err := executeGraphQLQuery(string(queryData), val.URL, val.AuthKey, val.AuthValue)
 	if err != nil {
 		fmt.Println("Failed to execute GraphQL query:", err)
 		http.Error(w, "Failed to execute GraphQL query", http.StatusInternalServerError)
@@ -144,9 +207,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 // TODO authToken
-func executeGraphQLQuery(query, authToken string) ([]byte, error) {
-	url := EXPORTER_GRAPHQL_URL
-
+func executeGraphQLQuery(query, url string, authKey string, authValue string) ([]byte, error) {
 	reqBody, err := json.Marshal(map[string]string{
 		"query": string(query),
 	})
@@ -162,7 +223,7 @@ func executeGraphQLQuery(query, authToken string) ([]byte, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", authToken)
+	req.Header.Set(authKey, authValue)
 
 	resp, err := client.Do(req)
 	if err != nil {
