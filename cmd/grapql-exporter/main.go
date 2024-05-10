@@ -70,12 +70,10 @@ func getenvStr(key string) (string, error) {
 func getenvInt(key string, fallback int) int {
 	s, err := getenvStr(key)
 	if err != nil {
-		fmt.Printf("getenvInt: Error getting value for key %s. Using default %d\n", key, fallback)
 		return fallback
 	}
 	v, err := strconv.Atoi(s)
 	if err != nil {
-		fmt.Printf("getenvInt: Error converting key %s\n using default %d\n", key, fallback)
 		return fallback
 	}
 	return v
@@ -111,15 +109,9 @@ func loadConfig() error {
 }
 
 func main() {
-	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
-		err := os.Mkdir(cacheDir, os.ModePerm)
-
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
+	fmt.Printf("Env Config - Listen address: %s\n", EXPORTER_LISTEN_ADDR)
+	fmt.Printf("Env Config - Config path: %s\n", EXPORTER_GRAPHQL_CONFIG_PATH)
+	fmt.Printf("Env Config - Cache minutes: %d\n", EXPORTER_CACHE_MINUTES)
 	err := loadConfig()
 
 	if err != nil {
@@ -128,9 +120,21 @@ func main() {
 	}
 
 	fmt.Printf("Loaded %d configurations.", len(config.QueryPaths))
+
 	var keys []string
 	for k := range config.QueryPaths {
 		keys = append(keys, k)
+
+		cachePath := filepath.Join(cacheDir, k)
+
+		if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+			err := os.Mkdir(cachePath, os.ModePerm)
+
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+		}
 	}
 	fmt.Println("Map keys:", keys) // Output: [apple banana cherry]
 
