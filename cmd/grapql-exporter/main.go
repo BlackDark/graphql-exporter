@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -168,7 +168,6 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	configPath := parts[2]
 
-	fmt.Println(config)
 	val, ok := config.QueryPaths[configPath]
 	if !ok {
 		http.Error(w, fmt.Sprintf("Config not provided for GraphQL client: %s", configPath), http.StatusInternalServerError)
@@ -185,7 +184,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queryData, err := ioutil.ReadFile(queryPath)
+	queryData, err := os.ReadFile(queryPath)
 	if err != nil {
 		fmt.Println("Failed to read query file:", err)
 		http.Error(w, "Failed to read query file", http.StatusInternalServerError)
@@ -210,7 +209,6 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, string(result))
 }
 
-// TODO authToken
 func executeGraphQLQuery(query, url string, authKey string, authValue string) ([]byte, error) {
 	reqBody, err := json.Marshal(map[string]string{
 		"query": string(query),
@@ -235,14 +233,14 @@ func executeGraphQLQuery(query, url string, authKey string, authValue string) ([
 	}
 	defer resp.Body.Close()
 
-	return ioutil.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func readCachedData(path string) ([]byte, error) {
 	cacheMutex.RLock()
 	defer cacheMutex.RUnlock()
 
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +252,7 @@ func writeCachedData(path string, data []byte) error {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 
-	return ioutil.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0644)
 }
 
 func isCacheExpired(path string) bool {
